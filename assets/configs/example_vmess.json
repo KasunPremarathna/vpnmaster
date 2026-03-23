@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "example-vmess-1",
+      "name": "Example VMess Server",
+      "server": "vmess.example.com",
+      "port": 443,
+      "protocol": "vmess",
+      "authType": "password",
+      "username": "00000000-0000-0000-0000-000000000001",
+      "password": "",
+      "privateKey": "",
+      "payload": null,
+      "sni": "vmess.example.com",
+      "dns": "1.0.0.1",
+      "xrayConfig": {
+        "type": "vmess",
+        "address": "vmess.example.com",
+        "port": 443,
+        "uuid": "00000000-0000-0000-0000-000000000001",
+        "alterId": "0",
+        "security": "auto",
+        "network": "ws",
+        "tls": "tls",
+        "sni": "vmess.example.com",
+        "host": "vmess.example.com",
+        "path": "/ws",
+        "remark": "Example VMess"
+      },
+      "createdAt": "2026-03-22T00:00:00.000Z"
+    }
+  ],
+  "appConfig": {
+    "killSwitch": false,
+    "splitTunneling": false,
+    "excludedApps": [],
+    "autoReconnect": true,
+    "autoStart": false,
+    "dns1": "1.0.0.1",
+    "dns2": "8.8.8.8",
+    "darkMode": true
+  },
+  "payloads": []
+}

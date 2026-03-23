@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "example-ssh-1",
+      "name": "Example SSH Server",
+      "server": "ssh.example.com",
+      "port": 22,
+      "protocol": "ssh",
+      "authType": "password",
+      "username": "vpnuser",
+      "password": "changeme",
+      "privateKey": "",
+      "payload": "CONNECT [host]:[port] HTTP/1.1\r\nHost: [host]\r\nUser-Agent: [user-agent]\r\nProxy-Connection: Keep-Alive\r\n\r\n",
+      "sni": null,
+      "dns": "1.1.1.1",
+      "xrayConfig": null,
+      "createdAt": "2026-03-22T00:00:00.000Z"
+    }
+  ],
+  "appConfig": {
+    "killSwitch": false,
+    "splitTunneling": false,
+    "excludedApps": [],
+    "autoReconnect": true,
+    "autoStart": false,
+    "dns1": "1.1.1.1",
+    "dns2": "8.8.8.8",
+    "darkMode": true
+  },
+  "payloads": [
+    {
+      "id": "payload-connect-1",
+      "name": "CONNECT Payload",
+      "method": "connect",
+      "headers": {},
+      "body": "CONNECT [host]:[port] HTTP/1.1\r\nHost: [host]\r\nUser-Agent: [user-agent]\r\nProxy-Connection: Keep-Alive\r\n\r\n",
+      "useSni": false,
+      "sniOverride": null
+    }
+  ]
+}

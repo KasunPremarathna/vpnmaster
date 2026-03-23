@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "727353846450",
+    "project_id": "vpnmaster-ed3f4",
+    "storage_bucket": "vpnmaster-ed3f4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:727353846450:android:4dc856f96937d2fd3c37ab",
+        "android_client_info": {
+          "package_name": "com.vpnmaster.vpn_master"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "727353846450-hjmnfltrbco68ljktb2qgnlhbrjlcvia.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBgZqk9DKKLs4Vmc6glGYgXkawGAPwin3U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "727353846450-hjmnfltrbco68ljktb2qgnlhbrjlcvia.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
