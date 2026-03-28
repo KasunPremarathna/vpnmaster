@@ -39,12 +39,26 @@ class VpnProvider extends ChangeNotifier {
 
   void _onStateChanged(VpnConnectionState state) {
     _connectionState = state;
-    if (state == VpnConnectionState.error && autoReconnect) {
-      _scheduleReconnect();
-    } else if (state == VpnConnectionState.connected) {
-      _reconnectAttempts = 0;
-      _reconnectTimer?.cancel();
+    
+    switch (state) {
+      case VpnConnectionState.connected:
+        _log.info('VPN Connected Successfully ✔️');
+        _reconnectAttempts = 0;
+        _reconnectTimer?.cancel();
+        break;
+      case VpnConnectionState.disconnected:
+        _log.info('VPN Disconnected 🛑');
+        break;
+      case VpnConnectionState.error:
+        _log.error('VPN Connection Error ⚠️');
+        if (autoReconnect) _scheduleReconnect();
+        break;
+      case VpnConnectionState.connecting:
+        break;
+      case VpnConnectionState.disconnecting:
+        break;
     }
+
     notifyListeners();
   }
 
@@ -61,6 +75,15 @@ class VpnProvider extends ChangeNotifier {
     try {
       _log.info('Connecting to ${profile.name} (${profile.protocolLabel})...');
 
+      String activeSni = profile.sni ?? '';
+      if (activeSni.contains(',')) {
+        final snis = activeSni.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        if (snis.isNotEmpty) {
+          activeSni = snis[_reconnectAttempts % snis.length];
+          _log.info('Multi-SNI Rotator selected: $activeSni (Attempt $_reconnectAttempts)');
+        }
+      }
+
       final config = {
         'server': profile.server,
         'port': profile.port,
@@ -68,9 +91,9 @@ class VpnProvider extends ChangeNotifier {
         'username': profile.username,
         'password': profile.password,
         'dns': profile.dns ?? '1.1.1.1',
-        'sni': profile.sni ?? '',
+        'sni': activeSni,
         'xrayJson': [VpnProtocol.vless, VpnProtocol.vmess, VpnProtocol.trojan].contains(profile.protocol)
-            ? XrayConfigGenerator.generate(profile)
+            ? XrayConfigGenerator.generate(profile, overrideSni: activeSni)
             : null,
       };
 
@@ -87,8 +110,18 @@ class VpnProvider extends ChangeNotifier {
     if (![VpnProtocol.vless, VpnProtocol.vmess, VpnProtocol.trojan].contains(profile.protocol)) {
       return -1; // Cannot ping SSH natively using Libv2ray yet
     }
+    
+    _log.info('Pinging ${profile.server}...');
     final xrayJson = XrayConfigGenerator.generate(profile);
-    return await _vpnService.pingServer(xrayJson);
+    final ms = await _vpnService.pingServer(xrayJson);
+    
+    if (ms > 0) {
+      _log.info('Server response: $ms ms ⚡');
+    } else {
+      _log.warning('Server ping timeout or unreachable ⏱️');
+    }
+    
+    return ms;
   }
 
   Future<void> disconnect() async {

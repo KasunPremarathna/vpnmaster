@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'providers/vpn_provider.dart';
 import 'providers/config_provider.dart';
 import 'providers/log_provider.dart';
+import 'providers/hotspot_provider.dart';
 import 'presentation/screens/home_screen.dart';
 import 'presentation/screens/privacy_policy_screen.dart';
 import 'presentation/screens/payload_builder_screen.dart';
@@ -47,6 +48,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => VpnProvider()),
         ChangeNotifierProvider(create: (_) => LogProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => HotspotProvider()),
       ],
       child: const VpnMasterApp(),
     ),

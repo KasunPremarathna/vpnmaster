@@ -91,7 +91,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               darkMode: cfg.darkMode,
             )),
           ),
-
           const SizedBox(height: 8),
           _sectionHeader('Split Tunneling', colors),
           _toggle(
@@ -118,11 +117,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('App selector requires device query')),
+                  const SnackBar(
+                      content: Text('App selector requires device query')),
                 );
               },
             ),
-
           const SizedBox(height: 8),
           _sectionHeader('DNS', colors),
           Padding(
@@ -140,14 +139,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   child: TextField(
                     controller: _dns2,
-                    decoration: const InputDecoration(labelText: 'Secondary DNS'),
+                    decoration:
+                        const InputDecoration(labelText: 'Secondary DNS'),
                     onChanged: (_) => _saveDns(config, cfg),
                   ),
                 ),
               ],
             ),
           ),
-
           const SizedBox(height: 8),
           _sectionHeader('Payload Templates', colors),
           ListTile(
@@ -160,7 +159,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               MaterialPageRoute(builder: (_) => const PayloadBuilderScreen()),
             ),
           ),
-
           const SizedBox(height: 8),
           _sectionHeader('Appearance', colors),
           _toggle(
@@ -170,7 +168,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             theme.isDark,
             (_) => theme.toggle(),
           ),
-
           const SizedBox(height: 8),
           _sectionHeader('About', colors),
           ListTile(
@@ -212,7 +209,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 letterSpacing: 1.2)),
       );
 
-  Widget _toggle(String title, String subtitle, IconData icon, bool value, void Function(bool) onChanged) =>
+  Widget _toggle(String title, String subtitle, IconData icon, bool value,
+          void Function(bool) onChanged) =>
       Card(
         margin: const EdgeInsets.only(bottom: 6),
         child: SwitchListTile(

@@ -141,26 +141,21 @@ class VpnProfile {
   }
 
   /// Parse standard vless:// URI
-  static VpnProfile? fromVlessUri(String uri) {
+  static VpnProfile? fromVlessUri(String uriString) {
     try {
-      if (!uri.startsWith('vless://')) return null;
-      // vless://uuid@host:port?params#remark
-      final withoutScheme = uri.replaceFirst('vless://', '');
-      final hashIdx = withoutScheme.indexOf('#');
-      final remark = hashIdx >= 0
-          ? Uri.decodeComponent(withoutScheme.substring(hashIdx + 1))
+      if (!uriString.startsWith('vless://')) return null;
+      
+      final uri = Uri.parse(uriString);
+      final host = uri.host;
+      if (host.isEmpty) return null;
+      
+      final port = uri.hasPort ? uri.port : 443;
+      final uuid = uri.userInfo;
+      final params = uri.queryParameters;
+      final remark = uri.fragment.isNotEmpty 
+          ? Uri.decodeComponent(uri.fragment) 
           : 'VLess Profile';
-      final main =
-          hashIdx >= 0 ? withoutScheme.substring(0, hashIdx) : withoutScheme;
-      final qIdx = main.indexOf('?');
-      final params = qIdx >= 0 ? Uri.splitQueryString(main.substring(qIdx + 1)) : <String, String>{};
-      final base = qIdx >= 0 ? main.substring(0, qIdx) : main;
-      final atIdx = base.lastIndexOf('@');
-      final uuid = base.substring(0, atIdx);
-      final hostPort = base.substring(atIdx + 1);
-      final colonIdx = hostPort.lastIndexOf(':');
-      final host = hostPort.substring(0, colonIdx);
-      final port = int.tryParse(hostPort.substring(colonIdx + 1)) ?? 443;
+
       return VpnProfile(
         name: remark,
         server: host,
@@ -316,24 +311,21 @@ class XrayConfig {
   }
 
   /// Parse trojan:// URI
-  static XrayConfig? fromTrojanUri(String uri) {
+  static XrayConfig? fromTrojanUri(String uriString) {
     try {
-      if (!uri.startsWith('trojan://')) return null;
-      final withoutScheme = uri.replaceFirst('trojan://', '');
-      final hashIdx = withoutScheme.indexOf('#');
-      final remark = hashIdx >= 0
-          ? Uri.decodeComponent(withoutScheme.substring(hashIdx + 1))
+      if (!uriString.startsWith('trojan://')) return null;
+      
+      final uri = Uri.parse(uriString);
+      final host = uri.host;
+      if (host.isEmpty) return null;
+      
+      final port = uri.hasPort ? uri.port : 443;
+      final password = uri.userInfo;
+      final params = uri.queryParameters;
+      final remark = uri.fragment.isNotEmpty 
+          ? Uri.decodeComponent(uri.fragment) 
           : 'Trojan';
-      final main = hashIdx >= 0 ? withoutScheme.substring(0, hashIdx) : withoutScheme;
-      final qIdx = main.indexOf('?');
-      final params = qIdx >= 0 ? Uri.splitQueryString(main.substring(qIdx + 1)) : <String, String>{};
-      final base = qIdx >= 0 ? main.substring(0, qIdx) : main;
-      final atIdx = base.lastIndexOf('@');
-      final password = base.substring(0, atIdx);
-      final hostPort = base.substring(atIdx + 1);
-      final colonIdx = hostPort.lastIndexOf(':');
-      final host = hostPort.substring(0, colonIdx);
-      final port = int.tryParse(hostPort.substring(colonIdx + 1)) ?? 443;
+
       return XrayConfig(
         type: XrayType.trojan,
         address: host,

@@ -1,40 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart' as firebase;
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-class AppUser {
-  final String id;
-  final String name;
-  final String email;
-  final String? photoUrl;
-  final String role; // 'user' or 'agent'
-
-  AppUser({
-    required this.id,
-    required this.name,
-    required this.email,
-    this.photoUrl,
-    this.role = 'user',
-  });
-
-  factory AppUser.fromMap(Map<String, dynamic> data, String id) {
-    return AppUser(
-      id: id,
-      name: data['name'] ?? '',
-      email: data['email'] ?? '',
-      photoUrl: data['photoUrl'],
-      role: data['role'] ?? 'user',
-    );
-  }
-
-  Map<String, dynamic> toMap() {
-    return {
-      'name': name,
-      'email': email,
-      'photoUrl': photoUrl,
-      'role': role,
-    };
-  }
-}
+import 'package:google_sign_in/google_sign_in.dart';
+import '../data/models/user.dart';
 
 class AuthService {
   final firebase.FirebaseAuth _auth = firebase.FirebaseAuth.instance;
@@ -48,28 +15,44 @@ class AuthService {
       if (doc.exists) {
         return AppUser.fromMap(doc.data()!, doc.id);
       } else {
-        // Create new user profile on first login
-        final newUser = AppUser(
+        // New user - default to 'pending' role to trigger role selection
+        return AppUser(
           id: firebaseUser.uid,
-          name: firebaseUser.displayName ?? 'Unknown',
+          name: firebaseUser.displayName ?? 'New User',
           email: firebaseUser.email ?? '',
           photoUrl: firebaseUser.photoURL,
-          role: 'user',
+          role: 'pending', 
         );
-        await _db.collection('users').doc(firebaseUser.uid).set(newUser.toMap());
-        return newUser;
       }
     });
   }
 
-  /// Google Sign-In using the standard OAuth credential flow
+  Future<void> createUserProfile(AppUser user, String selectedRole) async {
+    final newUser = AppUser(
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      photoUrl: user.photoUrl,
+      role: selectedRole,
+    );
+    await _db.collection('users').doc(user.id).set(newUser.toMap());
+  }
+
   Future<void> signInWithGoogle() async {
     try {
-      // Use Firebase Auth's built-in Google provider for web-compatible flow
-      final googleProvider = firebase.GoogleAuthProvider();
-      await _auth.signInWithProvider(googleProvider);
+      final googleSignIn = GoogleSignIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      if (googleUser == null) return;
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final firebase.AuthCredential credential = firebase.GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      await _auth.signInWithCredential(credential);
     } catch (e) {
-      throw Exception('Google Sign-In failed: $e');
+      throw Exception('Google Sign-In failed. Please ensure SHA-1 [E6:92:D5:D7:12:AD:11:0B:51:7A:F9:BD:C5:79:98:CC:13:C4:70:E0] is added to Firebase.');
     }
   }
 

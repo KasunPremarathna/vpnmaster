@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../data/models/payload_config.dart';
+import '../../data/models/vpn_profile.dart';
 import '../../providers/config_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
@@ -73,6 +74,11 @@ class _PayloadBuilderScreenState extends State<PayloadBuilderScreen> {
       appBar: AppBar(
         title: const Text('Payload Builder'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.send_rounded),
+            tooltip: 'Send to Profile',
+            onPressed: _sendToProfile,
+          ),
           TextButton(onPressed: _save, child: const Text('SAVE')),
         ],
       ),
@@ -250,11 +256,188 @@ class _PayloadBuilderScreenState extends State<PayloadBuilderScreen> {
                 letterSpacing: 1.2)),
       );
 
+  /// Returns the current payload body template for storage in a VpnProfile
+  String _buildPayloadString() => _bodyCtrl.text;
+
+  void _sendToProfile() {
+    if (_bodyCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Build a payload first before sending to a profile.')),
+      );
+      return;
+    }
+
+    final payloadStr = _buildPayloadString();
+    final serverCtrl = TextEditingController();
+    final portCtrl = TextEditingController(text: '80');
+    final userCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final nameCtrl = TextEditingController(
+      text: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : 'SSH Profile',
+    );
+    bool obscure = true;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setBS) => Padding(
+          padding: EdgeInsets.only(
+            left: 20, right: 20, top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.send_rounded, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Create SSH Profile',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(ctx)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Payload preview chip
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Payload ready: ${payloadStr.length > 60 ? '${payloadStr.substring(0, 60).replaceAll('\r\n', '↵')}…' : payloadStr.replaceAll('\r\n', '↵')}',
+                          style: const TextStyle(fontSize: 11, color: Colors.green, fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Profile Name',
+                      prefixIcon: Icon(Icons.label_rounded)),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: serverCtrl,
+                        decoration: const InputDecoration(
+                            labelText: 'SSH Server / Host',
+                            prefixIcon: Icon(Icons.dns_rounded)),
+                        keyboardType: TextInputType.url,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 80,
+                      child: TextField(
+                        controller: portCtrl,
+                        decoration: const InputDecoration(labelText: 'Port'),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: userCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Username',
+                      prefixIcon: Icon(Icons.person_rounded)),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passCtrl,
+                  obscureText: obscure,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: const Icon(Icons.lock_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure ? Icons.visibility : Icons.visibility_off),
+                      onPressed: () => setBS(() => obscure = !obscure),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.add_circle_rounded),
+                    label: const Text('Create Profile',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    style: ElevatedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12))),
+                    onPressed: () {
+                      if (serverCtrl.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('Server / host is required.')),
+                        );
+                        return;
+                      }
+                      final profile = VpnProfile(
+                        name: nameCtrl.text.trim().isNotEmpty
+                            ? nameCtrl.text.trim()
+                            : 'SSH Profile',
+                        server: serverCtrl.text.trim(),
+                        port: int.tryParse(portCtrl.text.trim()) ?? 80,
+                        protocol: VpnProtocol.ssh,
+                        username: userCtrl.text.trim(),
+                        password: passCtrl.text,
+                        payload: payloadStr,
+                        sni: _useSni ? _sniCtrl.text.trim() : null,
+                      );
+                      context.read<ConfigProvider>().addProfile(profile);
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('✅ "${profile.name}" added to Servers!'),
+                          action: SnackBarAction(
+                            label: 'VIEW',
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _save() {
     final config = context.read<ConfigProvider>();
     final payload = PayloadConfig(
       id: widget.existing?.id,
-      name: _nameCtrl.text.trim().isEmpty ? 'Payload ${DateTime.now().millisecondsSinceEpoch}' : _nameCtrl.text.trim(),
+      name: _nameCtrl.text.trim().isEmpty
+          ? 'Payload ${DateTime.now().millisecondsSinceEpoch}'
+          : _nameCtrl.text.trim(),
       method: _method,
       headers: _headers,
       body: _bodyCtrl.text,

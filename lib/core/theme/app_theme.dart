@@ -32,20 +32,27 @@ class AppTheme {
         cardTheme: CardThemeData(
           color: _darkCard,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
         appBarTheme: AppBarTheme(
           backgroundColor: _darkBg,
           elevation: 0,
           centerTitle: true,
+          toolbarHeight: 48,
           titleTextStyle: GoogleFonts.inter(
             color: Colors.white,
-            fontSize: 18,
+            fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
-          iconTheme: const IconThemeData(color: Colors.white),
+          iconTheme: const IconThemeData(color: Colors.white, size: 20),
         ),
-        drawerTheme: const DrawerThemeData(backgroundColor: _darkSurface),
+        listTileTheme: const ListTileThemeData(
+          dense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          minVerticalPadding: 4,
+        ),
+        drawerTheme: const DrawerThemeData(backgroundColor: _darkSurface, width: 260),
         switchTheme: SwitchThemeData(
           thumbColor: WidgetStateProperty.resolveWith(
               (s) => s.contains(WidgetState.selected) ? _accent : Colors.grey),
@@ -58,22 +65,26 @@ class AppTheme {
           style: ElevatedButton.styleFrom(
             backgroundColor: _accent,
             foregroundColor: Colors.black,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            minimumSize: const Size(64, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           fillColor: _darkCard,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: _accent, width: 1.5),
           ),
-          labelStyle: const TextStyle(color: Colors.grey),
+          labelStyle: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
         extensions: const [AppColors.dark],
       );
@@ -93,27 +104,51 @@ class AppTheme {
         cardTheme: CardThemeData(
           color: _lightSurface,
           elevation: 2,
+          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           shadowColor: Colors.black12,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
         appBarTheme: AppBarTheme(
           backgroundColor: _lightSurface,
           elevation: 0,
           centerTitle: true,
+          toolbarHeight: 48,
           titleTextStyle: GoogleFonts.inter(
             color: const Color(0xFF1A1A2E),
-            fontSize: 18,
+            fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
-          iconTheme: const IconThemeData(color: Color(0xFF1A1A2E)),
+          iconTheme: const IconThemeData(color: Color(0xFF1A1A2E), size: 20),
+        ),
+        listTileTheme: const ListTileThemeData(
+          dense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+          minVerticalPadding: 4,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: _primary,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            minimumSize: const Size(64, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
           ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: _primary, width: 1.5),
+          ),
+          labelStyle: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
         extensions: const [AppColors.light],
       );

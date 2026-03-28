@@ -76,7 +76,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
             icon: Icons.file_download_rounded,
             color: colors.accent,
             title: 'Import Config',
-            subtitle: 'Load profiles from a .vpm file',
+            subtitle: 'Load profiles from a .vpm or .ehi file',
             onTap: () => _import(config),
           ),
           _actionTile(

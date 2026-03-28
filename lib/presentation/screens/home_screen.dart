@@ -7,7 +7,8 @@ import '../../providers/config_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/vpn_service.dart';
 import '../../data/models/vpn_profile.dart';
-// import '../widgets/marketplace_section.dart'; // temporarily hidden
+import '../../providers/log_provider.dart';
+import '../../services/log_service.dart';
 import 'server_list_screen.dart';
 import 'log_screen.dart';
 import 'settings_screen.dart';
@@ -15,6 +16,12 @@ import 'tutorial_screen.dart';
 import 'config_screen.dart';
 import 'hotspot_screen.dart';
 import 'package:in_app_update/in_app_update.dart';
+import '../../services/device_service.dart';
+import '../../services/auth_service.dart';
+import '../../data/models/user.dart';
+import '../marketplace/marketplace_feed_screen.dart';
+import 'role_selection_screen.dart';
+import 'package:flutter/services.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,6 +35,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final List<FlSpot> _uploadData = [];
   final List<FlSpot> _downloadData = [];
   int _tick = 0;
+  String? _deviceId;
+  int _currentIndex = 0;
 
   Future<void> _checkForUpdate() async {
     try {
@@ -57,6 +66,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(seconds: 4),
     );
+    _loadDeviceId();
+  }
+
+  Future<void> _loadDeviceId() async {
+    final id = await DeviceService.getDeviceId();
+    if (mounted) setState(() => _deviceId = id);
   }
 
   @override
@@ -78,154 +93,166 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final vpn = context.watch<VpnProvider>();
-    final config = context.watch<ConfigProvider>();
-    final colors = Theme.of(context).extension<AppColors>()!;
+    return StreamBuilder<AppUser?>(
+      stream: AuthService().userStream,
+      builder: (context, authSnapshot) {
+        if (authSnapshot.hasData && authSnapshot.data!.role == 'pending') {
+          return RoleSelectionScreen(user: authSnapshot.data!);
+        }
 
-    _updateGraph(vpn.stats);
+        final vpn = context.watch<VpnProvider>();
+        final config = context.watch<ConfigProvider>();
+        final colors = Theme.of(context).extension<AppColors>()!;
+        final user = authSnapshot.data;
 
-    return Scaffold(
-      drawer: _buildDrawer(context),
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 60,
-            floating: true,
-            pinned: true,
-            title: Row(
-              children: [
-                Image.asset('assets/icons/logo.png',
-                    width: 28,
-                    height: 28,
-                    errorBuilder: (_, __, ___) =>
-                        Icon(Icons.vpn_lock, color: colors.accent, size: 28)),
-                const SizedBox(width: 10),
-                const Text('Velora VPN Proxy'),
-              ],
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.list_alt_rounded),
-                tooltip: 'Logs',
-                onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const LogScreen())),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_rounded),
-                onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen())),
-              ),
+        _updateGraph(vpn.stats);
+
+        return Scaffold(
+          drawer: _buildDrawer(context),
+          body: IndexedStack(
+            index: _currentIndex,
+            children: [
+              _buildDashboard(context, vpn, config, colors),
+              MarketplaceFeedScreen(currentUser: user),
             ],
           ),
-          SliverPadding(
-            padding: const EdgeInsets.all(20),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                // ── Active Profile ──────────────────────
-                _ProfileSelector(
-                  profile: config.selectedProfile,
-                  onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const ServerListScreen())),
-                ),
-                const SizedBox(height: 32),
-
-                // ── Connect Button ──────────────────────
-                Center(
-                  child: _ConnectButton(
-                    state: vpn.connectionState,
-                    pulseController: _pulseController,
-                    onTap: () async {
-                      if (vpn.isConnected) {
-                        await vpn.disconnect();
-                      } else {
-                        final profile = config.selectedProfile;
-                        if (profile == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Please select a server first')),
-                          );
-                          return;
-                        }
-                        await vpn.connect(profile);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // ── Status Label ─────────────────────────
-                Center(
-                  child: _StatusBadge(state: vpn.connectionState),
-                ),
-                const SizedBox(height: 32),
-
-                // ── Speed Cards ──────────────────────────
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SpeedCard(
-                        icon: Icons.arrow_upward_rounded,
-                        label: 'Upload',
-                        value: vpn.stats.uploadSpeedFormatted,
-                        color: colors.accentGreen,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _SpeedCard(
-                        icon: Icons.arrow_downward_rounded,
-                        label: 'Download',
-                        value: vpn.stats.downloadSpeedFormatted,
-                        color: colors.accent,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                
-                // ── Ping Button ──────────────────────────
-                Center(
-                  child: _HomePingButton(
-                    profile: config.selectedProfile,
-                    vpnProvider: vpn,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // ── Duration ─────────────────────────────
-                if (vpn.isConnected)
-                  Center(
-                    child: Text(
-                      _formatDuration(vpn.stats.duration),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: colors.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ),
-                const SizedBox(height: 24),
-
-                // ── Speed Graph ──────────────────────────
-                _SpeedGraph(
-                  uploadData: _uploadData,
-                  downloadData: _downloadData,
-                  accentColor: colors.accent,
-                  greenColor: colors.accentGreen,
-                ),
-                const SizedBox(height: 48),
-
-                // ── Marketplace Section (temporarily hidden) ─
-                // const MarketplaceSection(),
-                // const SizedBox(height: 24),
-              ]),
-            ),
-          ),
-        ],
-      ),
+          bottomNavigationBar: _buildBottomNav(context, user),
+        );
+      },
     );
   }
+
+  Widget _buildDashboard(BuildContext context, VpnProvider vpn, ConfigProvider config, AppColors colors) {
+    return CustomScrollView(
+      slivers: [
+        SliverAppBar(
+          expandedHeight: 60,
+          floating: true,
+          pinned: true,
+          title: Row(
+            children: [
+              Image.asset('assets/icons/logo.png',
+                  width: 28,
+                  height: 28,
+                  errorBuilder: (_, __, ___) =>
+                      Icon(Icons.vpn_lock, color: colors.accent, size: 28)),
+              const SizedBox(width: 10),
+              const Text('Velora VPN Proxy'),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.list_alt_rounded),
+              tooltip: 'Logs',
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const LogScreen())),
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings_rounded),
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            ),
+          ],
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.all(20),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              // ── Connect Button ──────────────────────
+              Center(
+                child: _ConnectButton(
+                  state: vpn.connectionState,
+                  pulseController: _pulseController,
+                  onTap: () async {
+                    if (vpn.isConnected) {
+                      await vpn.disconnect();
+                    } else {
+                      final profile = config.selectedProfile;
+                      if (profile == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Please select a server first')),
+                        );
+                        return;
+                      }
+                      await vpn.connect(profile);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ── Status Label ─────────────────────────
+              Center(
+                child: _StatusBadge(state: vpn.connectionState),
+              ),
+              const SizedBox(height: 32),
+
+              // ── Speed Cards ──────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: _SpeedCard(
+                      icon: Icons.arrow_upward_rounded,
+                      label: 'Upload',
+                      value: vpn.stats.uploadSpeedFormatted,
+                      color: colors.accentGreen,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _SpeedCard(
+                      icon: Icons.arrow_downward_rounded,
+                      label: 'Download',
+                      value: vpn.stats.downloadSpeedFormatted,
+                      color: colors.accent,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              
+              // ── Ping Button ──────────────────────────
+              Center(
+                child: _HomePingButton(
+                  profile: config.selectedProfile,
+                  vpnProvider: vpn,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Duration ─────────────────────────────
+              if (vpn.isConnected)
+                Center(
+                  child: Text(
+                    _formatDuration(vpn.stats.duration),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: colors.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              const SizedBox(height: 24),
+
+              // ── Speed Graph ──────────────────────────
+              _SpeedGraph(
+                uploadData: _uploadData,
+                downloadData: _downloadData,
+                accentColor: colors.accent,
+                greenColor: colors.accentGreen,
+              ),
+              const SizedBox(height: 24),
+              
+              // ── Mini Log Console ─────────────────────
+              const _MiniLogConsole(),
+              const SizedBox(height: 24),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
+
 
   Widget _buildDrawer(BuildContext context) {
     return Drawer(
@@ -283,17 +310,102 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Navigator.pop(context);
               Navigator.pushNamed(context, '/privacy');
             }),
+            
+            const Divider(height: 32, indent: 16, endIndent: 16),
+            
             const Spacer(),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('v1.0.0',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey)),
-            )
+            
+            // ── Device Information ────────────────────
+            if (_deviceId != null)
+              _buildDeviceIdSection(context),
+            
+            // ── Footer Decoration ─────────────────────
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Text(
+                    '◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢◤',
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    style: TextStyle(
+                      color: Color(0x4DE6E0E9),
+                      fontSize: 8,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  Divider(color: Colors.white10, height: 16),
+                  Text(
+                    'v1.0.6+7',
+                    style: TextStyle(
+                      color: Color(0xFFE6E0E9),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 1.2,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildDeviceIdSection(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('DEVICE ID', 
+            style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _deviceId ?? 'Loading...',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 10,
+                    color: colors.accent.withValues(alpha: 0.8),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.copy_rounded, size: 16),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: _deviceId ?? ''));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Device ID copied!'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
 
   ListTile _drawerItem(BuildContext context, IconData icon, String label, VoidCallback onTap) {
     return ListTile(
@@ -308,6 +420,73 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     return '$h:$m:$s';
+  }
+
+  Widget _buildBottomNav(BuildContext context, AppUser? user) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.card,
+        border: const Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+      ),
+      child: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          if (index > 0 && user == null) {
+            _showLoginPrompt(context);
+          } else {
+            setState(() => _currentIndex = index);
+          }
+        },
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        selectedItemColor: colors.accent,
+        unselectedItemColor: Colors.grey,
+        selectedFontSize: 10,
+        unselectedFontSize: 10,
+        type: BottomNavigationBarType.fixed,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.vpn_lock_rounded),
+            label: 'VPN',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.storefront_rounded),
+            label: 'MARKETPLACE',
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLoginPrompt(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Login Required'),
+        content: const Text('Please sign in to access the VPN marketplace.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              final auth = AuthService();
+              try {
+                await auth.signInWithGoogle();
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Login failed: ${e.toString()}')),
+                  );
+                }
+              }
+            },
+            child: const Text('Sign in with Google'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -347,8 +526,8 @@ class _ConnectButton extends StatelessWidget {
           child: GestureDetector(
             onTap: isConnecting ? null : onTap,
             child: Container(
-              width: 160,
-              height: 160,
+              width: 110,
+              height: 110,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
@@ -360,8 +539,8 @@ class _ConnectButton extends StatelessWidget {
                 boxShadow: [
                   BoxShadow(
                     color: buttonColor.withValues(alpha: isConnected ? .5 : .2),
-                    blurRadius: 32,
-                    spreadRadius: 4,
+                    blurRadius: 24,
+                    spreadRadius: 2,
                   ),
                 ],
                 border: Border.all(color: buttonColor, width: 2),
@@ -371,16 +550,16 @@ class _ConnectButton extends StatelessWidget {
                 children: [
                   isConnecting
                       ? const SizedBox(
-                          width: 36,
-                          height: 36,
+                          width: 28,
+                          height: 28,
                           child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
                         )
-                      : Icon(
-                          isConnected ? Icons.power_settings_new : Icons.power_settings_new,
-                          size: 48,
+                      : const Icon(
+                          Icons.power_settings_new,
+                          size: 34,
                           color: Colors.white,
                         ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   Text(
                     isConnected
                         ? 'DISCONNECT'
@@ -446,52 +625,6 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-// ── Profile Selector ──────────────────────────────────────────
-class _ProfileSelector extends StatelessWidget {
-  final dynamic profile;
-  final VoidCallback onTap;
-  const _ProfileSelector({this.profile, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<AppColors>()!;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: colors.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: colors.accent.withValues(alpha: .2)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.dns_rounded, color: colors.accent, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: profile == null
-                  ? Text('Tap to select a server',
-                      style: TextStyle(color: Colors.grey.shade500))
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(profile.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text('${profile.server}:${profile.port}  •  ${profile.protocolLabel}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: Colors.grey)),
-                      ],
-                    ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: Colors.grey.shade500),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ── Speed Card ────────────────────────────────────────────────
 class _SpeedCard extends StatelessWidget {
@@ -682,5 +815,72 @@ class _HomePingButtonState extends State<_HomePingButton> {
       label: const Text('Test Ping', style: TextStyle(color: Colors.grey)),
       onPressed: _doPing,
     );
+  }
+}
+
+// ── Mini Log Console ───────────────────────────────────────────
+class _MiniLogConsole extends StatelessWidget {
+  const _MiniLogConsole();
+
+  @override
+  Widget build(BuildContext context) {
+    final logs = context.watch<LogProvider>();
+    final colors = Theme.of(context).extension<AppColors>()!;
+    
+    return Container(
+      height: 180,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.terminal_rounded, size: 16, color: colors.accent),
+              const SizedBox(width: 6),
+              const Text('Live Console', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: logs.entries.isEmpty
+                ? const Center(child: Text('Waiting for connection...', style: TextStyle(color: Colors.grey, fontSize: 11)))
+                : ListView.builder(
+                    reverse: true, // Auto scrolls to bottom natively 
+                    itemCount: logs.entries.length,
+                    itemBuilder: (ctx, i) {
+                      // Reverse index to show newest at bottom because list is reversed
+                      final reversedIndex = logs.entries.length - 1 - i;
+                      final entry = logs.entries[reversedIndex];
+                      final color = _colorForLevel(context, entry.level);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(entry.formattedTime, style: const TextStyle(color: Colors.grey, fontSize: 10, fontFamily: 'monospace')),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(entry.message, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600))),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _colorForLevel(BuildContext context, LogLevel level) {
+    switch (level) {
+      case LogLevel.debug: return Colors.grey;
+      case LogLevel.info: return Theme.of(context).extension<AppColors>()!.accent;
+      case LogLevel.warning: return Colors.orange;
+      case LogLevel.error: return Colors.redAccent;
+    }
   }
 }

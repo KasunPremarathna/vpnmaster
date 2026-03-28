@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../data/models/vpn_profile.dart';
 import '../../providers/config_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/config_service.dart';
+import '../../data/models/payload_config.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   final VpnProfile? profile;
@@ -13,10 +15,21 @@ class ProfileEditScreen extends StatefulWidget {
 
 class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _name, _server, _port, _user, _pass, _key, _sni, _dns, _payload;
+  late final TextEditingController _name,
+      _server,
+      _port,
+      _user,
+      _pass,
+      _key,
+      _sni,
+      _dns,
+      _payload,
+      _wsPath,
+      _wsHost;
   late VpnProtocol _protocol;
   late AuthType _authType;
   String _transportProtocol = 'tcp';
+  String _tls = 'none';
 
   bool _showPass = false;
 
@@ -26,21 +39,37 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final p = widget.profile;
     _name = TextEditingController(text: p?.name ?? '');
     _server = TextEditingController(text: p?.server ?? '');
-    _port = TextEditingController(text: p?.port.toString() ?? '22');
+    _port = TextEditingController(text: p?.port.toString() ?? '443');
     _user = TextEditingController(text: p?.username ?? '');
     _pass = TextEditingController(text: p?.password ?? '');
     _key = TextEditingController(text: p?.privateKey ?? '');
     _sni = TextEditingController(text: p?.sni ?? '');
     _dns = TextEditingController(text: p?.dns ?? '');
     _payload = TextEditingController(text: p?.payload ?? '');
+    _wsPath = TextEditingController(text: p?.xrayConfig?.path ?? '');
+    _wsHost = TextEditingController(text: p?.xrayConfig?.host ?? '');
     _protocol = p?.protocol ?? VpnProtocol.ssh;
     _authType = p?.authType ?? AuthType.password;
     _transportProtocol = p?.xrayConfig?.network ?? 'tcp';
+    _tls = p?.xrayConfig?.tls ?? 'none';
+    if (_tls.isEmpty) _tls = 'none';
   }
 
   @override
   void dispose() {
-    for (final c in [_name, _server, _port, _user, _pass, _key, _sni, _dns, _payload]) {
+    for (final c in [
+      _name,
+      _server,
+      _port,
+      _user,
+      _pass,
+      _key,
+      _sni,
+      _dns,
+      _payload,
+      _wsPath,
+      _wsHost
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -54,9 +83,16 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       appBar: AppBar(
         title: Text(isEdit ? 'Edit Profile' : 'New Profile'),
         actions: [
+          if (isEdit)
+            IconButton(
+              icon: const Icon(Icons.share_rounded, size: 22),
+              tooltip: 'Export Profile',
+              onPressed: () => _showExportDialog(context, widget.profile!),
+            ),
           TextButton(
             onPressed: _save,
-            child: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('SAVE',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           )
         ],
       ),
@@ -67,31 +103,37 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           children: [
             _section('Basic'),
             _field(_name, 'Profile Name', icon: Icons.label_rounded),
-            _field(_server, 'Server / Host', icon: Icons.dns_rounded,
+            _field(_server, 'Server / Host',
+                icon: Icons.dns_rounded,
                 validator: (v) => v!.isEmpty ? 'Required' : null),
-            _field(_port, 'Port', icon: Icons.numbers, keyboardType: TextInputType.number,
-                validator: (v) => int.tryParse(v!) == null ? 'Invalid port' : null),
+            _field(_port, 'Port',
+                icon: Icons.numbers,
+                keyboardType: TextInputType.number,
+                validator: (v) =>
+                    int.tryParse(v!) == null ? 'Invalid port' : null),
             const SizedBox(height: 16),
-
             _section('Protocol'),
             _protocolSelector(),
             const SizedBox(height: 16),
-
             if (_protocol == VpnProtocol.ssh) ...[
               _section('Authentication'),
               _authTypeSelector(),
               const SizedBox(height: 8),
               _field(_user, 'Username', icon: Icons.person_rounded),
               if (_authType == AuthType.password)
-                _field(_pass, 'Password', icon: Icons.lock_rounded, obscure: !_showPass,
+                _field(_pass, 'Password',
+                    icon: Icons.lock_rounded,
+                    obscure: !_showPass,
                     suffix: IconButton(
-                        icon: Icon(_showPass ? Icons.visibility_off : Icons.visibility),
-                        onPressed: () => setState(() => _showPass = !_showPass)))
+                        icon: Icon(_showPass
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        onPressed: () =>
+                            setState(() => _showPass = !_showPass)))
               else
-                _field(_key, 'Private Key (PEM)', icon: Icons.key_rounded,
-                    maxLines: 6, obscure: false),
+                _field(_key, 'Private Key (PEM)',
+                    icon: Icons.key_rounded, maxLines: 6, obscure: false),
             ],
-
             if (_protocol == VpnProtocol.vless ||
                 _protocol == VpnProtocol.vmess ||
                 _protocol == VpnProtocol.trojan) ...[
@@ -100,13 +142,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               const SizedBox(height: 16),
               _section('Transport Protocol'),
               _transportSelector(),
+              if (_transportProtocol == 'ws') ...[
+                const SizedBox(height: 16),
+                _field(_wsHost, 'WebSocket Host', icon: Icons.cloud_outlined),
+                _field(_wsPath, 'WebSocket Path',
+                    icon: Icons.http_rounded, hint: '/path'),
+              ],
+              const SizedBox(height: 16),
+              _section('TLS / Security'),
+              _tlsSelector(),
             ],
-
             const SizedBox(height: 16),
             _section('Optional'),
-            _field(_payload, 'Custom Payload', icon: Icons.code_rounded, maxLines: 3),
-            _field(_sni, 'SNI Override', icon: Icons.security_rounded),
-            _field(_dns, 'Custom DNS', icon: Icons.wifi_rounded, hint: '1.1.1.1'),
+            _field(_payload, 'Custom Payload',
+                icon: Icons.code_rounded, maxLines: 3),
+            _field(_sni, 'SNI Override (Comma separated for Auto Rotate)',
+                icon: Icons.security_rounded, hint: 'sni1.com, sni2.com'),
+            _field(_dns, 'Custom DNS',
+                icon: Icons.wifi_rounded, hint: '1.1.1.1'),
           ],
         ),
       ),
@@ -161,7 +214,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             label: Text(p.name.toUpperCase()),
             selected: selected,
             selectedColor: accent.withValues(alpha: .2),
-            side: BorderSide(color: selected ? accent : Colors.grey.withValues(alpha: .3)),
+            side: BorderSide(
+                color: selected ? accent : Colors.grey.withValues(alpha: .3)),
             labelStyle: TextStyle(color: selected ? accent : null),
             onSelected: (_) => setState(() => _protocol = p),
           );
@@ -176,10 +230,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             child: Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                label: Text(a == AuthType.password ? 'Password' : 'Private Key'),
+                label:
+                    Text(a == AuthType.password ? 'Password' : 'Private Key'),
                 selected: selected,
                 selectedColor: accent.withValues(alpha: .2),
-                side: BorderSide(color: selected ? accent : Colors.grey.withValues(alpha: .3)),
+                side: BorderSide(
+                    color:
+                        selected ? accent : Colors.grey.withValues(alpha: .3)),
                 labelStyle: TextStyle(color: selected ? accent : null),
                 onSelected: (_) => setState(() => _authType = a),
               ),
@@ -203,10 +260,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       children: options.map((opt) {
         final selected = _transportProtocol == opt['value'];
         return ChoiceChip(
-          label: Text(opt['label']!, style: TextStyle(fontWeight: selected ? FontWeight.bold : null)),
+          label: Text(opt['label']!,
+              style: TextStyle(fontWeight: selected ? FontWeight.bold : null)),
           selected: selected,
           selectedColor: accent.withValues(alpha: .2),
-          side: BorderSide(color: selected ? accent : Colors.grey.withValues(alpha: .3)),
+          side: BorderSide(
+              color: selected ? accent : Colors.grey.withValues(alpha: .3)),
           labelStyle: TextStyle(color: selected ? accent : null),
           onSelected: (_) => setState(() => _transportProtocol = opt['value']!),
         );
@@ -214,38 +273,127 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     );
   }
 
+  Widget _tlsSelector() {
+    final options = ['none', 'tls', 'xtls', 'reality'];
+    final accent = Theme.of(context).extension<AppColors>()!.accent;
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: options.map((opt) {
+        final selected = _tls == opt;
+        return ChoiceChip(
+          label: Text(opt.toUpperCase(),
+              style: TextStyle(fontWeight: selected ? FontWeight.bold : null)),
+          selected: selected,
+          selectedColor: accent.withValues(alpha: .2),
+          side: BorderSide(
+              color: selected ? accent : Colors.grey.withValues(alpha: .3)),
+          labelStyle: TextStyle(color: selected ? accent : null),
+          onSelected: (_) => setState(() => _tls = opt),
+        );
+      }).toList(),
+    );
+  }
+
+  void _showExportDialog(BuildContext context, VpnProfile profile) {
+    bool lockHwid = false;
+    String password = '';
+
+    showDialog(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Export Config',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                      'Securely share your payload and configurations as an encrypted .VPM file.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Password (Optional)',
+                      prefixIcon: Icon(Icons.password_rounded, size: 18),
+                    ),
+                    obscureText: true,
+                    onChanged: (v) => password = v.trim(),
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    title: const Text('Lock to this Device (HWID)',
+                        style: TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.bold)),
+                    subtitle: const Text(
+                        'Prevents stealing. Payload can only be imported back onto this exact phone.',
+                        style: TextStyle(fontSize: 10, color: Colors.grey)),
+                    value: lockHwid,
+                    onChanged: (v) => setDialogState(() => lockHwid = v),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('CANCEL'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    final bundle = ExportBundle(
+                      profiles: [profile],
+                      appConfig: AppConfig(),
+                      payloads: [],
+                    );
+                    try {
+                      await ConfigService().shareConfig(
+                        bundle: bundle,
+                        password: password,
+                        lockToDevice: lockHwid,
+                      );
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Export failed: $e')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.lock_rounded, size: 16),
+                  label: const Text('SHARE .VPM'),
+                ),
+              ],
+            );
+          });
+        });
+  }
+
   void _save() {
     if (!_formKey.currentState!.validate()) return;
     final config = context.read<ConfigProvider>();
     XrayConfig? newXrayConfig = widget.profile?.xrayConfig;
-    if (newXrayConfig != null) {
+    final oldXray = newXrayConfig;
+    if (oldXray != null) {
       newXrayConfig = XrayConfig(
-        type: newXrayConfig.type,
+        type: oldXray.type,
         address: _server.text.trim(),
         port: int.parse(_port.text.trim()),
         uuid: _user.text.trim(),
-        alterId: newXrayConfig.alterId,
-        security: newXrayConfig.security,
+        alterId: oldXray.alterId,
+        security: oldXray.security,
         network: _transportProtocol,
-        tls: newXrayConfig.tls,
-        sni: _sni.text.trim().isEmpty ? newXrayConfig.sni : _sni.text.trim(),
-        host: newXrayConfig.host,
-        path: newXrayConfig.path,
-        flow: newXrayConfig.flow,
-        password: newXrayConfig.password,
-        method: newXrayConfig.method,
-        remark: newXrayConfig.remark,
-      );
-    } else if (_protocol == VpnProtocol.vless || _protocol == VpnProtocol.vmess || _protocol == VpnProtocol.trojan) {
-      XrayType xtype = XrayType.vless;
-      if (_protocol == VpnProtocol.vmess) xtype = XrayType.vmess;
-      if (_protocol == VpnProtocol.trojan) xtype = XrayType.trojan;
-      newXrayConfig = XrayConfig(
-        type: xtype,
-        address: _server.text.trim(),
-        port: int.parse(_port.text.trim()),
-        uuid: _user.text.trim(),
-        network: _transportProtocol,
+        tls: _tls == 'none' ? '' : _tls,
+        sni: _sni.text.trim().isEmpty ? null : _sni.text.trim(),
+        host: _wsHost.text.trim().isEmpty ? null : _wsHost.text.trim(),
+        path: _wsPath.text.trim().isEmpty ? null : _wsPath.text.trim(),
+        flow: oldXray.flow,
+        password: oldXray.password,
+        method: oldXray.method,
+        remark: oldXray.remark,
       );
     }
 

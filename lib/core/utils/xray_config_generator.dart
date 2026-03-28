@@ -4,7 +4,7 @@ import '../../data/models/vpn_profile.dart';
 class XrayConfigGenerator {
   /// Generates the raw JSON configuration string required by Xray-core
   /// to route traffic intercepted by the Android VpnService via tun2socks.
-  static String generate(VpnProfile profile, {int localPort = 10808}) {
+  static String generate(VpnProfile profile, {int localPort = 10808, String? overrideSni}) {
     if (profile.xrayConfig == null) return '{}';
     final xc = profile.xrayConfig!;
 
@@ -24,7 +24,7 @@ class XrayConfigGenerator {
               {
                 "id": xc.uuid,
                 "encryption": "none",
-                "flow": xc.flow ?? "",
+                if (xc.flow != null && xc.flow!.isNotEmpty) "flow": xc.flow,
               }
             ]
           }
@@ -60,6 +60,7 @@ class XrayConfigGenerator {
 
     // Stream Settings common to VLESS/VMESS/Trojan
     Map<String, dynamic> streamSettings = {};
+    final activeHost = (overrideSni?.isNotEmpty == true) ? overrideSni : xc.host;
 
     if (xc.network != null && xc.network!.isNotEmpty) {
       streamSettings["network"] = xc.network;
@@ -67,7 +68,7 @@ class XrayConfigGenerator {
         streamSettings["wsSettings"] = {
           "path": xc.path ?? "/",
           "headers": {
-            if (xc.host != null && xc.host!.isNotEmpty) "Host": xc.host
+            if (activeHost != null && activeHost.isNotEmpty) "Host": activeHost
           }
         };
       } else if (xc.network == "grpc") {
@@ -77,19 +78,21 @@ class XrayConfigGenerator {
       }
     }
 
-    if (xc.security == "tls" || xc.security == "reality") {
-      streamSettings["security"] = xc.security;
+    if (xc.tls == "tls" || xc.tls == "reality" || xc.tls == "xtls") {
+      streamSettings["security"] = xc.tls;
       
       Map<String, dynamic> secSettings = {
-        "serverName": xc.sni ?? xc.address,
+        "serverName": (overrideSni?.isNotEmpty == true) ? overrideSni : (xc.sni ?? xc.address),
         "allowInsecure": true, // Accommodate generic or free servers easily
         "fingerprint": "chrome"
       };
 
-      if (xc.security == "tls") {
+      if (xc.tls == "tls") {
         streamSettings["tlsSettings"] = secSettings;
-      } else if (xc.security == "reality") {
+      } else if (xc.tls == "reality") {
         streamSettings["realitySettings"] = secSettings;
+      } else if (xc.tls == "xtls") {
+        streamSettings["xtlsSettings"] = secSettings;
       }
     }
 
@@ -97,8 +100,16 @@ class XrayConfigGenerator {
       outbound["streamSettings"] = streamSettings;
     }
 
-    // Full config including tun2socks ingress
+    // Full config including tun2socks ingress and internal DNS resolver
     final config = {
+      "log": {"loglevel": "info"},
+      "dns": {
+        "servers": [
+          profile.dns ?? "1.1.1.1",
+          "8.8.8.8",
+          "localhost"
+        ]
+      },
       "inbounds": [
         {
           "tag": "tun-proxy",
@@ -111,18 +122,30 @@ class XrayConfigGenerator {
             "endpointAddressV6": "fc00::2"
           },
           "sniffing": {"enabled": true, "destOverride": ["http", "tls", "quic"]}
+        },
+        {
+          "tag": "socks-in",
+          "protocol": "socks",
+          "listen": "127.0.0.1",
+          "port": 10808,
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "sniffing": {"enabled": true, "destOverride": ["http", "tls"]}
         }
       ],
       "outbounds": [
-        outbound,
-        {"tag": "direct", "protocol": "freedom", "settings": {}},
-        {"tag": "block", "protocol": "blackhole", "settings": {"response": {"type": "http"}}}
+        outbound, // Tag: "proxy"
+        {"tag": "dns-out", "protocol": "dns", "settings": {}} // Answers intercepted TUN DNS queries
       ],
       "routing": {
-        "domainStrategy": "AsIs",
+        "domainStrategy": "IPIfNonMatch",
         "rules": [
-          {"type": "field", "outboundTag": "direct", "domain": ["geosite:cn"]},
-          {"type": "field", "outboundTag": "direct", "ip": ["geoip:private", "geoip:cn"]}
+          // Mandatory DNS intercept
+          {"type": "field", "inboundTag": ["tun-proxy"], "port": 53, "network": "udp", "outboundTag": "dns-out"},
+          // MANDATORY: Force everything (hotspot and tun) to use the proxy
+          {"type": "field", "network": "tcp,udp", "outboundTag": "proxy"}
         ]
       }
     };

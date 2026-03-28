@@ -1,119 +1,25 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../providers/vpn_provider.dart';
+import '../../providers/hotspot_provider.dart';
+import '../../core/theme/app_theme.dart';
 
-class HotspotScreen extends StatefulWidget {
+class HotspotScreen extends StatelessWidget {
   const HotspotScreen({super.key});
-
-  @override
-  State<HotspotScreen> createState() => _HotspotScreenState();
-}
-
-class _HotspotScreenState extends State<HotspotScreen> {
-  static const _channel = MethodChannel('com.vpnmaster/vpn');
-
-  bool _hotspotActive = false;
-  bool _loading = false;
-  String? _ssid;
-  String? _password;
-  String _gatewayIp = '192.168.49.1';
-  int _proxyPort = 10808;
-  String? _errorMsg;
-  bool _needsPermissionSettings = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Receive hotspot stopped callback from native
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'hotspotStopped') {
-        if (mounted) setState(() { _hotspotActive = false; _ssid = null; _password = null; });
-      }
-    });
-  }
-
-  Future<void> _startHotspot() async {
-    setState(() { _loading = true; _errorMsg = null; });
-
-    // Request location and nearby devices permissions (required by Android 13+ for startLocalOnlyHotspot)
-    final statuses = await [
-      Permission.location,
-      Permission.nearbyWifiDevices,
-    ].request();
-
-    final locGranted = statuses[Permission.location]?.isGranted ?? false;
-    final nearbyGranted = statuses[Permission.nearbyWifiDevices]?.isGranted ?? false;
-
-    if (!locGranted || (!nearbyGranted && Platform.isAndroid && await Permission.nearbyWifiDevices.status != PermissionStatus.restricted)) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _errorMsg = 'Location and Nearby Devices permissions are required to create a WiFi hotspot. Please grant them in Settings.';
-          _needsPermissionSettings = true;
-        });
-      }
-      return;
-    }
-
-    try {
-      final result = await _channel.invokeMapMethod<String, dynamic>('startLocalHotspot');
-      if (result != null && mounted) {
-        setState(() {
-          _hotspotActive = true;
-          _loading = false;
-          _ssid = result['ssid'] as String?;
-          _password = result['password'] as String?;
-          _gatewayIp = result['gatewayIp'] as String? ?? '192.168.49.1';
-          _proxyPort = result['proxyPort'] as int? ?? 10808;
-          _errorMsg = null;
-          _needsPermissionSettings = false;
-        });
-      }
-    } on PlatformException catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _errorMsg = e.message ?? 'Failed to start hotspot.';
-        });
-      }
-    }
-  }
-
-  Future<void> _stopHotspot() async {
-    setState(() => _loading = true);
-    try {
-      await _channel.invokeMethod('stopLocalHotspot');
-    } catch (_) {}
-    if (mounted) {
-      setState(() {
-        _loading = false;
-        _hotspotActive = false;
-        _ssid = null;
-        _password = null;
-      });
-    }
-  }
-
-  void _copy(String text, String label) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label copied!'), duration: const Duration(seconds: 2)),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
     final vpn = context.watch<VpnProvider>();
-    final isVpnConnected = vpn.isConnected;
+    final hotspot = context.watch<HotspotProvider>();
+    final colors = Theme.of(context).extension<AppColors>()!;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('VPN Hotspot'),
         actions: [
-          if (_hotspotActive)
+          if (hotspot.isActive)
             Container(
               margin: const EdgeInsets.only(right: 12),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -136,154 +42,286 @@ class _HotspotScreenState extends State<HotspotScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── VPN Status Banner ──────────────────────────────
+            // VPN Status
             _BannerCard(
-              color: isVpnConnected ? Colors.green : Colors.orange,
-              icon: isVpnConnected ? Icons.vpn_lock_rounded : Icons.warning_amber_rounded,
-              message: isVpnConnected
-                  ? 'VPN Connected — Hotspot users will share your VPN internet.'
-                  : 'VPN is not connected. Connect VPN first for secure sharing.',
+              color: vpn.isConnected ? Colors.green : Colors.orange,
+              icon: vpn.isConnected ? Icons.vpn_lock_rounded : Icons.warning_amber_rounded,
+              message: vpn.isConnected
+                  ? 'VPN Connected — Hotspot users will share your VPN.'
+                  : 'VPN not connected. Connect VPN first.',
             ),
             const SizedBox(height: 24),
 
-            // ── Hotspot Control Card ───────────────────────────
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _hotspotActive ? Colors.green.withValues(alpha: 0.5) : Colors.white12,
-                  width: _hotspotActive ? 1.5 : 1,
-                ),
-              ),
+            const _StepLabel(step: 1, title: 'Network Setup'),
+            _StepCard(
               child: Column(
                 children: [
-                  // Big animated icon
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 400),
-                    child: Icon(
-                      _hotspotActive ? Icons.wifi_tethering_rounded : Icons.wifi_tethering_off_rounded,
-                      key: ValueKey(_hotspotActive),
-                      size: 72,
-                      color: _hotspotActive ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _hotspotActive ? 'Hotspot is ON' : 'Hotspot is OFF',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: _hotspotActive ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : ElevatedButton.icon(
-                            onPressed: _hotspotActive ? _stopHotspot : _startHotspot,
-                            icon: Icon(_hotspotActive ? Icons.wifi_tethering_off_rounded : Icons.wifi_tethering_rounded),
-                            label: Text(
-                              _hotspotActive ? 'Stop Hotspot' : 'Start Hotspot',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _hotspotActive ? Colors.red : Colors.blueAccent,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                  ),
-                  if (_errorMsg != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_errorMsg!, style: const TextStyle(color: Colors.redAccent, fontSize: 13), textAlign: TextAlign.center),
+                  if (hotspot.isActive && !hotspot.proxyOnlyMode) ...[
+                    _StatusRow(label: '📶 SSID', value: hotspot.ssid ?? '-', onCopy: () => _copy(context, hotspot.ssid ?? '', 'SSID')),
+                    _StatusRow(label: '🔑 Password', value: hotspot.password ?? '-', onCopy: () => _copy(context, hotspot.password ?? '', 'Password')),
+                  ] else if (hotspot.isActive && hotspot.proxyOnlyMode)
+                    const _StatusRow(label: '🌐 Mode', value: 'System Hotspot')
+                  else ...[
+                    const Text('Start "App Hotspot" for automatic setup, or use "System Hotspot" if you have custom settings.', 
+                        style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.4)),
+                    const SizedBox(height: 16),
                   ],
-                  if (_needsPermissionSettings) ...[
+                  
+                  if (!hotspot.isActive) ...[
+                    ElevatedButton.icon(
+                      onPressed: () => _startAppHotspot(context, hotspot),
+                      icon: const Icon(Icons.wifi_tethering_rounded),
+                      label: const Text('Start App Hotspot'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colors.accent,
+                        foregroundColor: Colors.black,
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
-                      onPressed: () => openAppSettings(),
-                      icon: const Icon(Icons.settings_rounded),
-                      label: const Text('Open App Settings'),
-                      style: OutlinedButton.styleFrom(foregroundColor: Colors.blueAccent),
+                      onPressed: () => hotspot.openSystemHotspotSettings(),
+                      icon: const Icon(Icons.settings_outlined),
+                      label: const Text('Use System Hotspot'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueAccent,
+                        minimumSize: const Size(double.infinity, 48),
+                        side: const BorderSide(color: Colors.blueAccent),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
-                  ],
+                  ] else
+                    ElevatedButton.icon(
+                      onPressed: hotspot.stop,
+                      icon: const Icon(Icons.stop_rounded),
+                      label: const Text('Stop Sharing'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.withValues(alpha: 0.8),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
-            // ── Credentials (shown when active) ─────────────────
-            if (_hotspotActive) ...[
-              const Text('  Connect other devices with:', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              _InfoCard(
+            const _StepLabel(step: 2, title: 'VPN Sharing Status'),
+            _StepCard(
+              child: Column(
                 children: [
-                  _InfoRow(label: '📶 Network Name (SSID)', value: _ssid ?? 'VPN-Hotspot', onCopy: () => _copy(_ssid ?? '', 'SSID')),
-                  const Divider(height: 1, color: Colors.white10),
-                  _InfoRow(label: '🔑 Password', value: _password ?? '(none)', onCopy: () => _copy(_password ?? '', 'Password')),
+                  if (!hotspot.isActive)
+                    const Text('Activate Step 1 first to start sharing.', style: TextStyle(color: Colors.grey, fontSize: 13))
+                  else if (hotspot.isActive && !hotspot.proxyOnlyMode)
+                    const _StatusRow(label: '🛡️ Status', value: 'VPN Sharing Active', isPositive: true)
+                  else if (hotspot.isActive && hotspot.proxyOnlyMode)
+                    ElevatedButton(
+                      onPressed: hotspot.startProxyOnly,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green, 
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 45),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('START SHARING (PROXY)'),
+                    )
+                  else
+                    const _StatusRow(label: '🛡️ Status', value: 'Active', isPositive: true),
                 ],
               ),
-              const SizedBox(height: 16),
-              const Text('  Then set this SOCKS5 proxy on the other device:', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              _InfoCard(
-                children: [
-                  _InfoRow(label: '🌐 Proxy Host', value: _gatewayIp, onCopy: () => _copy(_gatewayIp, 'Proxy host')),
-                  const Divider(height: 1, color: Colors.white10),
-                  _InfoRow(label: '🔌 Proxy Port', value: '$_proxyPort', onCopy: () => _copy('$_proxyPort', 'Proxy port')),
-                  const Divider(height: 1, color: Colors.white10),
-                  const _InfoRow(label: '⚙️ Proxy Type', value: 'SOCKS5', onCopy: null),
-                ],
-              ),
-              const SizedBox(height: 16),
+            ),
+            const SizedBox(height: 20),
 
-              // Quick guide
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.blueAccent.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.2)),
-                ),
-                child: const Column(
+            const _StepLabel(step: 3, title: 'Client Configuration'),
+            if (hotspot.isActive)
+              _StepCard(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('📱 How to set proxy on Android:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    SizedBox(height: 6),
-                    Text('WiFi Settings → Long press network → Modify → Advanced → Proxy: Manual', style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
-                    SizedBox(height: 14),
-                    Text('💻 How to set proxy on Windows:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    SizedBox(height: 6),
-                    Text('Settings → Network → Proxy → Manual setup → SOCKS: 192.168.49.1 Port: 10808', style: TextStyle(color: Colors.grey, fontSize: 13, height: 1.5)),
-                  ],
-                ),
-              ),
-            ] else ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white10),
-                ),
-                child: const Column(
-                  children: [
-                    Icon(Icons.info_outline_rounded, color: Colors.grey, size: 32),
-                    SizedBox(height: 12),
-                    Text(
-                      'Tap "Start Hotspot" to create a WiFi network.\nOther devices can connect to it and use your VPN internet through a SOCKS5 proxy.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey, height: 1.6),
+                    const Text('Configure your Laptop / Tablet proxy:', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                    const SizedBox(height: 12),
+                    _InfoRow(label: '🌐 Gateway IPs', value: hotspot.gatewayIps.join('\n'), onCopy: () => _copy(context, hotspot.gatewayIps.first, 'IP')),
+                    const Divider(height: 20, color: Colors.white10),
+                    _InfoRow(label: '🧦 SOCKS5 Port', value: '10810 (Shielded)', onCopy: () => _copy(context, '10810', 'Port')),
+                    _InfoRow(label: '🔌 HTTP Port', value: '10809', onCopy: () => _copy(context, '10809', 'Port')),
+                    
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('🛡️ Anti-Leak Requirements:', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12)),
+                          SizedBox(height: 6),
+                          Text('1. Disable IPv6 on client device.\n2. Disable QUIC in Chrome settings.\n3. Use SOCKS5 Port 10810.', 
+                              style: TextStyle(color: Colors.grey, fontSize: 11, height: 1.5)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
+              )
+            else
+              const _StepCard(
+                child: Text('Sharing info will appear here once active.', style: TextStyle(color: Colors.grey, fontSize: 13)),
+              ),
+
+            if (hotspot.error != null) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(hotspot.error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13), textAlign: TextAlign.center),
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _startAppHotspot(BuildContext context, HotspotProvider hotspot) async {
+    final status = await Permission.locationWhenInUse.request();
+    if (status.isGranted) {
+      await hotspot.start();
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission is required for Hotspot.')),
+        );
+      }
+    }
+  }
+
+  void _copy(BuildContext context, String text, String label) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label copied to clipboard'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+}
+
+class _StepLabel extends StatelessWidget {
+  final int step;
+  final String title;
+  const _StepLabel({required this.step, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: const BoxDecoration(color: Colors.blueAccent, shape: BoxShape.circle),
+            child: Center(child: Text('$step', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+          ),
+          const SizedBox(width: 8),
+          Text(title.toUpperCase(), style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepCard extends StatelessWidget {
+  final Widget child;
+  const _StepCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _StatusRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isPositive;
+  final VoidCallback? onCopy;
+
+  const _StatusRow({required this.label, required this.value, this.isPositive = false, this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+          Row(
+            children: [
+              Text(value, style: TextStyle(
+                color: isPositive ? Colors.green : Colors.white, 
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              )),
+              if (onCopy != null) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onCopy,
+                  child: const Icon(Icons.copy_rounded, color: Colors.blueAccent, size: 16),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final VoidCallback? onCopy;
+
+  const _InfoRow({required this.label, required this.value, this.onCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13))),
+          const SizedBox(width: 12),
+          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), textAlign: TextAlign.right),
+          if (onCopy != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onCopy,
+              child: const Icon(Icons.copy_rounded, color: Colors.blueAccent, size: 16),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -293,74 +331,23 @@ class _BannerCard extends StatelessWidget {
   final Color color;
   final IconData icon;
   final String message;
+
   const _BannerCard({required this.color, required this.icon, required this.message});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
           Icon(icon, color: color, size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: Text(message, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 13))),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoCard extends StatelessWidget {
-  final List<Widget> children;
-  const _InfoCard({required this.children});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(children: children),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final VoidCallback? onCopy;
-  const _InfoRow({required this.label, required this.value, required this.onCopy});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                const SizedBox(height: 4),
-                SelectableText(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, fontFamily: 'monospace')),
-              ],
-            ),
-          ),
-          if (onCopy != null)
-            IconButton(
-              icon: const Icon(Icons.copy_rounded, size: 18, color: Colors.blueAccent),
-              onPressed: onCopy,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w500))),
         ],
       ),
     );

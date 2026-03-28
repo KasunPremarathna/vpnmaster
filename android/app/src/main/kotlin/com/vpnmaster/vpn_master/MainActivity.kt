@@ -79,11 +79,17 @@ class MainActivity : FlutterActivity() {
                 }
                 "openHotspotSettings" -> {
                     try {
-                        val intent = Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)
+                        val intent = Intent("android.settings.TETHER_SETTINGS")
                         startActivity(intent)
                         result.success(true)
                     } catch (e: Exception) {
-                        result.error("HOTSPOT_ERROR", e.message, null)
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e2: Exception) {
+                            result.error("HOTSPOT_ERROR", e2.message, null)
+                        }
                     }
                 }
                 else -> result.notImplemented()
